@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Agent - Reliable Multi-Step Task Execution Under Uncertainty</title>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #020617;
+      --bg-slate: #0f172a;
+      --accent-indigo: #6366f1;
+      --accent-purple: #a855f7;
+      --accent-cyan: #06b6d4;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --error: #ef4444;
+      --text-white: #f8fafc;
+      --text-gray: #94a3b8;
+      --glass: rgba(15, 23, 42, 0.7);
+      --border: rgba(255, 255, 255, 0.08);
+      --glow-indigo: rgba(99, 102, 241, 0.4);
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      cursor: none; /* Custom cursor */
+    }
+
+    body {
+      font-family: 'Outfit', sans-serif;
+      background: var(--bg-dark);
+      color: var(--text-white);
+      height: 100vh;
+      overflow: hidden;
+      perspective: 1000px;
+    }
+
+    /* --- BACKGROUND EFFECTS --- */
+    .bg-grid {
+      position: fixed;
+      inset: 0;
+      background-image: 
+        linear-gradient(var(--border) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border) 1px, transparent 1px);
+      background-size: 50px 50px;
+      mask-image: radial-gradient(circle at 50% 50%, black, transparent);
+      z-index: -1;
+      opacity: 0.3;
+    }
+
+    .bg-glow {
+      position: fixed;
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle at 50% 50%, var(--glow-indigo), transparent 70%);
+      filter: blur(80px);
+      border-radius: 50%;
+      z-index: -2;
+      pointer-events: none;
+      transition: transform 0.2s ease-out;
+    }
+
+    /* --- CUSTOM CURSOR --- */
+    #cursor {
+      position: fixed;
+      width: 20px;
+      height: 20px;
+      background: var(--accent-indigo);
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 9999;
+      mix-blend-mode: screen;
+      box-shadow: 0 0 20px var(--accent-indigo);
+      transition: transform 0.1s ease, background 0.3s ease;
+    }
+
+    #cursor-follower {
+      position: fixed;
+      width: 40px;
+      height: 40px;
+      border: 1px solid var(--accent-indigo);
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 9998;
+      transition: transform 0.15s ease-out;
+      opacity: 0.5;
+    }
+
+    /* --- SLIDES --- */
+    .slide-container {
+      position: relative;
+      height: 100vh;
+      width: 100vw;
+    }
+
+    .slide {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 5% 10%;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateZ(-200px) rotateX(10deg);
+      transition: all 0.8s cubic-bezier(0.23, 1, 0.32, 1);
+    }
+
+    .slide.active {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateZ(0) rotateX(0deg);
+    }
+
+    .slide.prev {
+      opacity: 0;
+      transform: translateZ(200px) rotateX(-10deg);
+    }
+
+    /* --- DECORATIVE ELEMENTS --- */
+    .glass {
+      background: var(--glass);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+    }
+
+    .gradient-text {
+      background: linear-gradient(135deg, var(--accent-indigo), var(--accent-cyan));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      font-weight: 800;
+    }
+
+    h1 { font-size: 5rem; line-height: 1; margin-bottom: 1.5rem; letter-spacing: -0.03em; }
+    h2 { font-size: 3.5rem; margin-bottom: 1rem; }
+    p { font-size: 1.25rem; color: var(--text-gray); max-width: 700px; line-height: 1.6; }
+
+    /* --- SLIDE 1: HERO --- */
+    .hero-box {
+      position: relative;
+      padding: 3rem;
+      overflow: hidden;
+    }
+
+    .brain-icon {
+      position: absolute;
+      top: -20px;
+      right: -20px;
+      opacity: 0.1;
+      width: 300px;
+      height: 300px;
+      animation: float 6s infinite ease-in-out;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translateY(0) rotate(0); }
+      50% { transform: translateY(-30px) rotate(5deg); }
+    }
+
+    /* --- SLIDE 3: CIRCUIT --- */
+    .circuit-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin-top: 3rem;
+      gap: 1.5rem;
+    }
+
+    .circuit-step {
+      padding: 1.25rem 2rem;
+      border: 1px solid var(--accent-indigo);
+      background: rgba(99, 102, 241, 0.1);
+      border-radius: 16px;
+      font-weight: 700;
+      position: relative;
+    }
+
+    .circuit-line {
+      height: 2px;
+      width: 60px;
+      background: rgba(255,255,255,0.1);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .circuit-line::after {
+      content: '';
+      position: absolute;
+      top: 0; left: -100%;
+      height: 100%; width: 50%;
+      background: var(--accent-indigo);
+      box-shadow: 0 0 10px var(--accent-indigo);
+      animation: pulse-line 2s infinite linear;
+    }
+
+    @keyframes pulse-line {
+      to { left: 200%; }
+    }
+
+    /* --- STATS --- */
+    .stat-card {
+      padding: 2.5rem;
+      text-align: center;
+    }
+
+    .stat-val {
+      font-size: 4.5rem;
+      font-weight: 800;
+      color: var(--accent-indigo);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* --- NAVIGATION --- */
+    .nav-bar {
+      position: fixed;
+      bottom: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 0.75rem 1.5rem;
+      display: flex;
+      gap: 1rem;
+      z-index: 1000;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      background: var(--text-gray);
+      border-radius: 50%;
+      cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    .dot.active {
+      background: var(--accent-indigo);
+      width: 40px;
+      border-radius: 6px;
+      box-shadow: 0 0 15px var(--accent-indigo);
+    }
+
+    .progress-ring {
+      position: fixed;
+      top: 40px;
+      right: 40px;
+      width: 60px;
+      height: 60px;
+    }
+
+    /* --- TERMINAL --- */
+    .terminal {
+      background: #000;
+      font-family: 'JetBrains Mono', monospace;
+      padding: 1.5rem;
+      border-radius: 12px;
+      border: 1px solid #333;
+      margin-top: 1.5rem;
+    }
+
+    .t-head { display: flex; gap: 6px; margin-bottom: 12px; }
+    .t-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+  </style>
+</head>
+<body>
+  <div id="cursor"></div>
+  <div id="cursor-follower"></div>
+  <div class="bg-grid"></div>
+  <div class="bg-glow" id="glow"></div>
+
+  <svg class="progress-ring" viewBox="0 0 100 100">
+    <circle cx="50" cy="50" r="45" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="5" />
+    <circle id="prog-circle" cx="50" cy="50" r="45" fill="none" stroke="var(--accent-indigo)" stroke-width="5" 
+      stroke-dasharray="283" stroke-dashoffset="283" stroke-linecap="round" transform="rotate(-90 50 50)" />
+  </svg>
+
+  <div class="slide-container">
+    <!-- SLIDE 1 -->
+    <div class="slide active" data-index="1">
+      <div class="glass hero-box">
+        <svg class="brain-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+          <path d="M12 4.5V2m0 16.5V22m-8-8H2m16.5-1H22M5.5 5.5L4 4m14.5 14.5L20 20M5.5 18.5L4 20m14.5-14.5L20 4" />
+          <path d="M12 16a4 4 0 100-8 4 4 0 000 8z" />
+          <path d="M12 12m-2 0a2 2 0 104 0 2 2 0 00-4 0" />
+        </svg>
+        <p style="color: var(--accent-indigo); letter-spacing: 0.4em; font-weight: 700; text-transform: uppercase; margin-bottom: 1rem;">Neural Agent v2.0</p>
+        <h1>Reliable <span class="gradient-text">AI Agent</span><br>Under Uncertainty</h1>
+        <p>A resilient multi-step execution loop that handles tool failure, API outages, and malformed data with adaptive recovery strategies.</p>
+        <div style="margin-top: 3rem; display: flex; gap: 1rem;">
+          <div class="glass" style="padding: 1rem 2rem; font-weight: 600;">Hackathon 2026</div>
+          <div style="padding: 1rem; color: var(--accent-indigo);">↓ Press Space or Arrows</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SLIDE 2 -->
+    <div class="slide" data-index="2">
+      <h2 class="gradient-text">The Brittle Reality</h2>
+      <p>Traditional agents suffer from cascading failures. One invalid response collapses the entire workflow.</p>
+      
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 2rem; margin-top: 3rem;">
+        <div class="glass" style="padding: 2rem;">
+          <div style="font-size: 2.5rem; margin-bottom: 1rem;">💣</div>
+          <h3 style="margin-bottom: 0.5rem;">API Instability</h3>
+          <p style="font-size: 1rem;">Rate limits and transient network errors halt execution without retry logic.</p>
+        </div>
+        <div class="glass" style="padding: 2rem;">
+          <div style="font-size: 2.5rem; margin-bottom: 1rem;">🧩</div>
+          <h3 style="margin-bottom: 0.5rem;">Malformed Data</h3>
+          <p style="font-size: 1rem;">Unexpected JSON structures or null fields break downstream step validation.</p>
+        </div>
+        <div class="glass" style="padding: 2rem;">
+          <div style="font-size: 2.5rem; margin-bottom: 1rem;">🔄</div>
+          <h3 style="margin-bottom: 0.5rem;">Rigid Plans</h3>
+          <p style="font-size: 1rem;">Inability to pivot or repair parameters mid-flow results in total task failure.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- SLIDE 3 -->
+    <div class="slide" data-index="3">
+      <h2 class="gradient-text">Neural Recovery Loop</h2>
+      <p>Our solution implements a ReAct-based verify-and-repair cycle that ensures task completion.</p>
+      
+      <div class="circuit-container">
+        <div class="circuit-step glass">THINK</div>
+        <div class="circuit-line"></div>
+        <div class="circuit-step glass">ACT</div>
+        <div class="circuit-line"></div>
+        <div class="circuit-step glass" style="border-color: var(--accent-cyan);">OBSERVE</div>
+        <div class="circuit-line"></div>
+        <div class="circuit-step glass" style="border-color: var(--success);">VERIFY</div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 2rem; margin-top: 4rem;">
+        <div class="glass" style="padding: 2rem; border-left: 4px solid var(--accent-indigo);">
+          <h4>Intelligent Backoff</h4>
+          <p style="font-size: 0.9rem; margin-top: 0.5rem;">Exponential retry with jitter for transient errors.</p>
+        </div>
+        <div class="glass" style="padding: 2rem; border-left: 4px solid var(--accent-cyan);">
+          <h4>Dynamic Repair</h4>
+          <p style="font-size: 0.9rem; margin-top: 0.5rem;">LLM-driven parameter correction for malformed tool inputs.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- SLIDE 4 -->
+    <div class="slide" data-index="4">
+      <h2 class="gradient-text">Resilience Patterns</h2>
+      <div style="display: flex; flex-direction: column; gap: 1.5rem; margin-top: 2rem;">
+        <div class="glass" style="display: flex; align-items: center; gap: 2rem; padding: 1.5rem 3rem;">
+          <span style="font-size: 2rem; font-weight: 800; color: var(--accent-indigo); opacity: 0.5;">01</span>
+          <div>
+            <h4 style="font-size: 1.5rem;">Circuit Breaker</h4>
+            <p style="font-size: 1rem;">Protects tool registry by disabling failing endpoints automatically.</p>
+          </div>
+        </div>
+        <div class="glass" style="display: flex; align-items: center; gap: 2rem; padding: 1.5rem 3rem;">
+          <span style="font-size: 2rem; font-weight: 800; color: var(--accent-purple); opacity: 0.5;">02</span>
+          <div>
+            <h4 style="font-size: 1.5rem;">Fallback Toolchains</h4>
+            <p style="font-size: 1rem;">Switches to fallback providers (e.g. Flight API → Web Search) if primary fails.</p>
+          </div>
+        </div>
+        <div class="glass" style="display: flex; align-items: center; gap: 2rem; padding: 1.5rem 3rem;">
+          <span style="font-size: 2rem; font-weight: 800; color: var(--accent-cyan); opacity: 0.5;">03</span>
+          <div>
+            <h4 style="font-size: 1.5rem;">Partial Replanning</h4>
+            <p style="font-size: 1rem;">When a step fails, only the remaining steps are recalculated, saving tokens.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SLIDE 5 -->
+    <div class="slide" data-index="5">
+      <h2 class="gradient-text">Decision Engine</h2>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 3rem;">
+        <div>
+          <p>The core intelligence that decides when to retry, when to repair, and when to pivot to a new plan.</p>
+          <div class="glass" style="margin-top: 2rem; padding: 2rem;">
+            <h4 style="color: var(--accent-cyan);">Reliability Scoring</h4>
+            <p style="font-size: 1rem; margin-top: 0.5rem;">Every tool maintains a rolling success rate in memory, influencing the next planning cycle.</p>
+          </div>
+        </div>
+        <div class="terminal">
+          <div class="t-head">
+            <div class="t-dot" style="background:#ff5f56"></div>
+            <div class="t-dot" style="background:#ffbd2e"></div>
+            <div class="t-dot" style="background:#27c93f"></div>
+          </div>
+          <code style="color: #6366f1;">// Execution Policy</code><br>
+          <code style="color: #a855f7;">if</code> (step.reliability < <code style="color: #06b6d4;">0.4</code>) {<br>
+          &nbsp;&nbsp;await agent.<code style="color: #10b981;">switchTool</code>(type);<br>
+          }<br>
+          <code style="color: #a855f7;">else if</code> (step.errors > <code style="color: #ef4444;">3</code>) {<br>
+          &nbsp;&nbsp;await agent.<code style="color: #10b981;">replanPartial</code>();<br>
+          }
+        </div>
+      </div>
+    </div>
+
+    <!-- SLIDE 6 -->
+    <div class="slide" data-index="6">
+      <h2 class="gradient-text">Tool Hub</h2>
+      <p>14 built-in high-reliability tools for production workflows.</p>
+      <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-top: 2rem;">
+        <div class="glass" style="text-align:center; padding: 1.5rem;">✈️ FlightSearch</div>
+        <div class="glass" style="text-align:center; padding: 1.5rem;">🏨 HotelBooking</div>
+        <div class="glass" style="text-align:center; padding: 1.5rem;">🌤️ Weather</div>
+        <div class="glass" style="text-align:center; padding: 1.5rem;">🌐 Translator</div>
+        <div class="glass" style="text-align:center; padding: 1.5rem;">🔍 WebSearch</div>
+        <div class="glass" style="text-align:center; padding: 1.5rem;">🧮 Calculator</div>
+        <div class="glass" style="text-align:center; padding: 1.5rem;">📧 Mailer</div>
+        <div class="glass" style="text-align:center; padding: 1.5rem;">📝 Parser</div>
+      </div>
+      <div class="glass" style="margin-top: 2rem; padding: 1.5rem; display: flex; align-items: center; justify-content: center; border-style: dashed;">
+        <span style="color: var(--accent-cyan); font-weight: 700;">+ Schema-based Auto-Validation (Zod)</span>
+      </div>
+    </div>
+
+    <!-- SLIDE 7 -->
+    <div class="slide" data-index="7">
+      <h2 class="gradient-text">Architecture</h2>
+      <div style="display: grid; grid-template-columns: repeat(2, 2fr 1.5fr); gap: 2rem; margin-top: 2rem;">
+        <div class="glass" style="padding: 2rem; grid-column: span 2;">
+          <h3>Agent Controller</h3>
+          <p style="font-size: 1rem;">Next.js server-side streaming loop managing state and tool orchestration.</p>
+        </div>
+        <div class="glass" style="padding: 2rem;">
+          <h3>Verification</h3>
+          <p style="font-size: 1rem;">Heuristic + LLM cross-check.</p>
+        </div>
+        <div class="glass" style="padding: 2rem;">
+          <h3>Memory</h3>
+          <p style="font-size: 1rem;">Context-aware history log.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- SLIDE 8 -->
+    <div class="slide" data-index="8">
+      <h2 class="gradient-text" style="text-align: center;">Performance</h2>
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 2rem; margin-top: 4rem;">
+        <div class="glass stat-card">
+          <div class="stat-val" data-val="98">0</div>
+          <p>Success Rate</p>
+        </div>
+        <div class="glass stat-card">
+          <div class="stat-val" data-val="04">0</div>
+          <p>Recovery Mods</p>
+        </div>
+        <div class="glass stat-card">
+          <div class="stat-val" data-val="14">0</div>
+          <p>Active Tools</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- SLIDE 9 -->
+    <div class="slide" data-index="9">
+      <h2 class="gradient-text">Tech Ecosystem</h2>
+      <div style="display: flex; flex-wrap: wrap; gap: 1rem; margin-top: 3rem;">
+        <div class="glass" style="padding: 1rem 2rem; border-color: #3178c6;">TypeScript</div>
+        <div class="glass" style="padding: 1rem 2rem; border-color: #00d8ff;">React</div>
+        <div class="glass" style="padding: 1rem 2rem; border-color: #fff;">Next.js 16</div>
+        <div class="glass" style="padding: 1rem 2rem; border-color: #8b5cf6;">Framer Motion</div>
+        <div class="glass" style="padding: 1rem 2rem; border-color: #06b6d4;">Tailwind</div>
+        <div class="glass" style="padding: 1rem 2rem; border-color: #f7df1e; color: #f7df1e;">Gemini API</div>
+      </div>
+      <div class="glass" style="margin-top: 4rem; padding: 2.5rem;">
+        <h3>Why Next.js 16?</h3>
+        <p>Leveraging Server Components and Edge Runtime to provide latency-free agentic thinking directly to the browser.</p>
+      </div>
+    </div>
+
+    <!-- SLIDE 10 -->
+    <div class="slide" data-index="10">
+      <h1 class="gradient-text" style="font-size: 7rem;">FIN.</h1>
+      <p style="font-size: 2rem;">Built for the future of resilient AI.</p>
+      <div style="margin-top: 5rem; display: flex; gap: 2rem;">
+        <div class="glass" style="padding: 2rem; flex: 1;">
+          <h4 style="color: var(--accent-indigo);">Try the Core</h4>
+          <code style="display: block; margin-top: 1rem;">npm run dev</code>
+        </div>
+        <div class="glass" style="padding: 2rem; flex: 1;">
+          <h4 style="color: var(--accent-cyan);">Documentation</h4>
+          <p style="font-size: 1rem; margin-top: 0.5rem;">neural-agent.io/docs</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="nav-bar glass" id="nav">
+    <div class="dot active" data-index="1"></div>
+    <div class="dot" data-index="2"></div>
+    <div class="dot" data-index="3"></div>
+    <div class="dot" data-index="4"></div>
+    <div class="dot" data-index="5"></div>
+    <div class="dot" data-index="6"></div>
+    <div class="dot" data-index="7"></div>
+    <div class="dot" data-index="8"></div>
+    <div class="dot" data-index="9"></div>
+    <div class="dot" data-index="10"></div>
+  </div>
+
+  <script>
+    let current = 1;
+    const slides = document.querySelectorAll('.slide');
+    const dots = document.querySelectorAll('.dot');
+    const cursor = document.getElementById('cursor');
+    const follower = document.getElementById('cursor-follower');
+    const progCircle = document.getElementById('prog-circle');
+    const glow = document.getElementById('glow');
+
+    // --- CURSOR LOGIC ---
+    document.addEventListener('mousemove', (e) => {
+      cursor.style.left = e.clientX + 'px';
+      cursor.style.top = e.clientY + 'px';
+      
+      setTimeout(() => {
+        follower.style.left = (e.clientX - 10) + 'px';
+        follower.style.top = (e.clientY - 10) + 'px';
+      }, 50);
+
+      const x = (e.clientX / window.innerWidth - 0.5) * 20;
+      const y = (e.clientY / window.innerHeight - 0.5) * 20;
+      glow.style.transform = `translate(${e.clientX - 300}px, ${e.clientY - 300}px)`;
+    });
+
+    // --- SLIDE NAVIGATION ---
+    function updateSlide(idx) {
+      const prev = current;
+      current = Math.min(Math.max(1, idx), slides.length);
+      
+      slides.forEach(s => {
+        const sIdx = +s.dataset.index;
+        s.classList.remove('active', 'prev');
+        if (sIdx === current) s.classList.add('active');
+        if (sIdx < current) s.classList.add('prev');
+      });
+
+      dots.forEach(d => {
+        d.classList.toggle('active', +d.dataset.index === current);
+      });
+
+      // Update progress ring
+      const dash = 283;
+      const offset = dash - (dash * current / slides.length);
+      progCircle.style.strokeDashoffset = offset;
+
+      // Trigger counter animation if on stats slide
+      if (current === 8) startCounters();
+    }
+
+    // --- COUNTER ANIMATION ---
+    function startCounters() {
+      const vals = document.querySelectorAll('.stat-val');
+      vals.forEach(v => {
+        const target = +v.dataset.val;
+        let c = 0;
+        const speed = target / 50;
+        const int = setInterval(() => {
+          c += speed;
+          if (c >= target) {
+            v.textContent = target + (target > 50 ? '%' : '');
+            clearInterval(int);
+          } else {
+            v.textContent = Math.floor(c);
+          }
+        }, 30);
+      });
+    }
+
+    // --- EVENT LISTENERS ---
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight' || e.key === ' ') updateSlide(current + 1);
+      if (e.key === 'ArrowLeft') updateSlide(current - 1);
+    });
+
+    dots.forEach(d => d.addEventListener('click', () => updateSlide(+d.dataset.index)));
+
+    updateSlide(1);
+  </script>
+</body>
+</html>
+ > 50) showSlide(diff > 0 ? current + 1 : current - 1 || total);
+    });
+
+    showSlide(1);
+  </script>
+</body>
+</html>
