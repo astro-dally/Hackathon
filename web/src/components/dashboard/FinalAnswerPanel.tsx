@@ -1,12 +1,13 @@
 'use client';
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Sparkles, Plane, ExternalLink } from 'lucide-react';
+import { Sparkles, Plane, X } from 'lucide-react';
 
 interface FinalAnswerPanelProps {
   answer: string;
   source?: 'llm' | 'local';
   confidence?: number;
+  onClose?: () => void;
 }
 
 function renderAnswer(text: string) {
@@ -27,15 +28,16 @@ function renderAnswer(text: string) {
   });
 }
 
-export function FinalAnswerPanel({ answer, source, confidence }: FinalAnswerPanelProps) {
+export function FinalAnswerPanel({ answer, source, confidence, onClose }: FinalAnswerPanelProps) {
   if (!answer) return null;
 
   return (
     <motion.div
       initial={{ opacity: 0, y: -12, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -20, scale: 0.95 }}
       transition={{ duration: 0.4, ease: 'easeOut' }}
-      className="mx-6 mb-0 mt-4 rounded-2xl border border-indigo-500/30 bg-gradient-to-br from-indigo-950/70 via-purple-950/50 to-black/60 backdrop-blur-md shadow-2xl shadow-indigo-900/30 overflow-hidden"
+      className="mx-6 mb-0 mt-4 rounded-2xl border border-indigo-500/30 bg-gradient-to-br from-indigo-950/70 via-purple-950/50 to-black/60 backdrop-blur-md shadow-2xl shadow-indigo-900/30 overflow-hidden relative group"
     >
       {/* Header */}
       <div className="flex items-center gap-3 px-6 py-4 border-b border-indigo-500/20 bg-indigo-950/30">
@@ -49,9 +51,21 @@ export function FinalAnswerPanel({ answer, source, confidence }: FinalAnswerPane
             {confidence != null && ` · ${Math.round(confidence * 100)}% confidence`}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-          <span className="text-xs text-green-400 font-mono">Complete</span>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 pr-2 border-r border-white/10">
+            <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+            <span className="text-[10px] text-green-400 font-bold uppercase tracking-wider">Complete</span>
+          </div>
+          
+          {onClose && (
+            <button 
+              onClick={onClose}
+              className="p-1.5 rounded-lg hover:bg-white/10 text-indigo-300 hover:text-white transition-all active:scale-95"
+              aria-label="Dismiss"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </div>
 

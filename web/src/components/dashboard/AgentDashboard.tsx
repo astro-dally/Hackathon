@@ -1,5 +1,6 @@
 'use client';
 import React, { useState, useRef, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { StatusBar } from './StatusBar';
 import { ControlPanel } from './ControlPanel';
 import { ExecutionGraph } from './ExecutionGraph';
@@ -223,13 +224,17 @@ export function AgentDashboard() {
   } as AgentRunState;
 
   return (
-    <div className="flex flex-col h-screen bg-neutral-950 text-gray-100 font-sans overflow-hidden">
-      <div className="absolute inset-0 z-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/20 via-neutral-950 to-neutral-950 pointer-events-none" />
+    <div className="flex flex-col h-screen bg-slate-950 text-slate-100 font-sans overflow-hidden relative">
+      {/* Dynamic Background Effects */}
+      <div className="absolute inset-0 z-0 bg-[radial-gradient(circle_at_50%_0%,_#1e1b4b_0%,_transparent_50%)] opacity-40 pointer-events-none" />
+      <div className="absolute inset-0 z-0 bg-[radial-gradient(circle_at_100%_100%,_#0f172a_0%,_transparent_50%)] opacity-40 pointer-events-none" />
+      <div className="absolute inset-0 z-0 opacity-[0.03] pointer-events-none mix-blend-overlay" 
+           style={{ backgroundImage: 'url("https://grainy-gradients.vercel.app/noise.svg")' }} />
 
       <div className="relative z-10 flex flex-col h-full">
         <StatusBar runState={displayState} />
 
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 overflow-hidden relative">
           <ControlPanel
             onExecute={handleExecute}
             isExecuting={isExecuting}
@@ -238,35 +243,59 @@ export function AgentDashboard() {
             onDeleteRun={handleDeleteRun}
           />
 
-          {/* Main canvas */}
-          <main className="flex-1 relative overflow-hidden flex flex-col bg-black/20">
-            <div className="px-6 py-4 border-b border-white/5 bg-black/20 backdrop-blur-sm z-20 flex justify-between items-center shadow-md flex-shrink-0">
-              <h2 className="text-sm font-semibold tracking-wider text-gray-300 uppercase">Execution Graph</h2>
-              <div className="flex items-center gap-4 text-xs font-mono text-gray-500">
-                <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-green-500" />Success</span>
-                <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-yellow-500" />Retry/Uncertain</span>
-                <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-blue-400" />Repaired</span>
-                <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-red-500" />Failed</span>
+          {/* Main Canvas Area */}
+          <main className="flex-1 relative overflow-hidden flex flex-col bg-slate-900/10 backdrop-blur-sm">
+            {/* Legend Header */}
+            <div className="px-8 py-5 border-b border-white/5 bg-slate-950/20 backdrop-blur-md z-30 flex justify-between items-center shadow-2xl">
+              <div className="flex items-center gap-3">
+                <div className="w-1 h-4 bg-indigo-500 rounded-full" />
+                <h2 className="text-[10px] font-black tracking-[0.3em] text-slate-400 uppercase">Neural Execution Graph</h2>
+              </div>
+              
+              <div className="flex items-center gap-6 text-[10px] font-black tracking-widest uppercase">
+                <span className="flex items-center gap-2 text-emerald-400"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]" />Success</span>
+                <span className="flex items-center gap-2 text-amber-400"><div className="w-1.5 h-1.5 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.6)]" />Retry</span>
+                <span className="flex items-center gap-2 text-blue-400"><div className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.6)]" />Repair</span>
+                <span className="flex items-center gap-2 text-rose-400"><div className="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.6)]" />Fail</span>
                 {isExecuting && (
-                  <span className="flex items-center gap-1.5 text-indigo-400 animate-pulse">
-                    <div className="w-2 h-2 rounded-full bg-indigo-400" />Live
+                  <div className="h-4 w-px bg-white/10 mx-2" />
+                )}
+                {isExecuting && (
+                  <span className="flex items-center gap-2 text-indigo-400 animate-pulse">
+                    <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.8)]" />Live Channel
                   </span>
                 )}
               </div>
             </div>
 
-            {/* Final Answer Panel — shown above graph when available */}
-            {finalAnswer && (
-              <div className="flex-shrink-0 overflow-y-auto max-h-52">
-                <FinalAnswerPanel answer={finalAnswer.text} source={finalAnswer.source as any} confidence={finalAnswer.confidence} />
-              </div>
-            )}
+            {/* Final Answer Overlay Panel */}
+            <AnimatePresence>
+              {finalAnswer && (
+                <motion.div 
+                  initial={{ opacity: 0, y: -20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20, scale: 0.95 }}
+                  className="absolute top-20 left-1/2 -translate-x-1/2 z-40 w-full max-w-2xl px-6"
+                >
+                  <div className="glass shadow-2xl rounded-2xl overflow-hidden border border-emerald-500/20">
+                    <FinalAnswerPanel 
+                      answer={finalAnswer.text} 
+                      source={finalAnswer.source as any} 
+                      confidence={finalAnswer.confidence} 
+                      onClose={() => setFinalAnswer(null)}
+                    />
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
-            <ExecutionGraph
-              steps={displayState.steps}
-              onSelectStep={setSelectedStep}
-              selectedStepId={selectedStep?.step.id}
-            />
+            <div className="flex-1 relative min-h-0">
+              <ExecutionGraph
+                steps={displayState.steps}
+                onSelectStep={setSelectedStep}
+                selectedStepId={selectedStep?.step.id}
+              />
+            </div>
           </main>
 
           <ReasoningFeed logs={displayState.logs} />
@@ -275,18 +304,25 @@ export function AgentDashboard() {
 
       <StepDetailsDrawer execution={selectedStep} onClose={() => setSelectedStep(null)} />
 
-      {/* HITL Modal */}
-      {hitl && (
-        <div className="absolute inset-0 z-50">
-          <HITLModal
-            runId={hitl.runId}
-            stepId={hitl.stepId}
-            question={hitl.question}
-            data={hitl.data}
-            onResolved={() => setHitl(null)}
-          />
-        </div>
-      )}
+      {/* HITL Modal Layer */}
+      <AnimatePresence>
+        {hitl && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 z-[100] backdrop-blur-lg bg-slate-950/60 flex items-center justify-center p-6"
+          >
+            <HITLModal
+              runId={hitl.runId}
+              stepId={hitl.stepId}
+              question={hitl.question}
+              data={hitl.data}
+              onResolved={() => setHitl(null)}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
