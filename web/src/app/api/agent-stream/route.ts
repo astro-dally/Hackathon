@@ -31,7 +31,11 @@ export async function GET(request: NextRequest) {
         const registry = new ToolRegistry();
         registerAllTools(registry);
 
-        const loop = new AgentLoop(goal, registry, { maxIterations: 5, confidenceThreshold: 0.7 }, send as any);
+        const loop = new AgentLoop(goal, registry, { 
+          maxIterations: 5, 
+          confidenceThreshold: 0.7,
+          enableReAct: true,
+        }, send as any);
         activeLoops.set(runId, loop);
 
         send({ type: 'run:start', goal, runId });
@@ -44,16 +48,26 @@ export async function GET(request: NextRequest) {
           globalConfidence = result.steps.reduce((acc, s) => acc + (s.confidence || 0.5), 0) / result.steps.length;
         }
 
+        // Generate reasoning logs from events
         const logs = [
           { id: 'log-1', timestamp: new Date(startTime).toISOString(), type: 'info', message: 'Agent started run', metadata: { goal } },
-          ...result.steps.map((step, i) => ({
-            id: `log-step-${i}`,
-            timestamp: new Date(startTime + (step.durationMs || 500)).toISOString(),
-            type: step.status === 'failed' ? 'error' : 'status' as any,
-            message: `Step ${step.step.id} [${step.step.tool}]: ${step.status}`,
-            stepId: step.step.id,
-          }))
         ];
+        
+        // Add step results to logs
+        for (let i = 0; i < result.steps.length; i++) {
+          const step = result.steps[i];
+          const stepTime = startTime + (i * 500);
+          const statusType = step.status === 'failed' ? 'error' : 'decision';
+          logs.push({
+            id: `log-step-${i}`,
+            timestamp: new Date(stepTime).toISOString(),
+            type: statusType as any,
+            message: `[${step.step.tool}] ${step.status}`,
+            stepId: step.step.id,
+            details: step.result ? JSON.stringify(step.result).slice(0, 100) : step.error,
+          });
+        }
+        
         if (result.errors.length > 0) {
           logs.push({ id: 'log-err', timestamp: new Date().toISOString(), type: 'error', message: 'Run encountered errors', details: result.errors.join(', ') } as any);
         }

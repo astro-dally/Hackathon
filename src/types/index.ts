@@ -175,6 +175,7 @@ export interface AgentLoopConfig {
   enablePartialRefinement: boolean;
   enableRepair: boolean;
   enableReflection: boolean;
+  enableReAct: boolean;
   maxRepairsPerStep: number;
   maxRetriesPerStep: number;
 }

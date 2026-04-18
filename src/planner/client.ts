@@ -183,9 +183,46 @@ function generateMockPlan(goal: string, availableTools: string): PlanOutputData 
     return { goal, steps };
   }
 
-  // ── Small Talk / Greetings ────────────────────────────────────────────────
+  // ── Small Talk / Greetings / Translation (Branching) ───────────────────────
   const greetings = ['hi', 'hello', 'hey', 'greetings', 'sup', 'yo'];
-  if (greetings.includes(goalLower.trim())) {
+  const isGreeting = greetings.includes(goalLower.trim());
+  const isTranslate = goalLower.includes('translat') || goalLower.includes('meaning') || goalLower.includes('japans') || goalLower.includes('hind');
+
+  if (isGreeting || isTranslate) {
+    if (isTranslate) {
+      return {
+        goal,
+        steps: [
+          {
+            id: 'step_1',
+            objective: 'Parse translation intent',
+            tool: 'parseIntent',
+            inputs: { query: goal },
+            dependsOn: [],
+          },
+          {
+            id: 'step_2',
+            objective: 'Perform translation',
+            tool: 'translateText',
+            inputs: { text: '$step_1.result.entities.text', targetLang: '$step_1.result.entities.targetLang' },
+            dependsOn: ['step_1'],
+          },
+          {
+            id: 'step_3',
+            objective: 'Synthesize final response',
+            tool: 'synthesizeFinalResponse',
+            inputs: { 
+              goal, 
+              bestResult: { translation: '$step_2.result.translated', targetLang: '$step_2.result.targetLang' },
+              alternatives: [],
+              confidence: 0.95
+            },
+            dependsOn: ['step_2'],
+          }
+        ]
+      };
+    }
+    
     return {
       goal,
       steps: [{
@@ -194,7 +231,7 @@ function generateMockPlan(goal: string, availableTools: string): PlanOutputData 
         tool: 'synthesizeFinalResponse',
         inputs: {
           goal,
-          bestResult: { message: "Hello! I am your AI Mission Control. I can help you find and book flights (specifically optimized for India), check weather, or search the web. How can I assist you today?" },
+          bestResult: { message: "Hello! I am your AI Mission Control. I can help you find and book flights (specifically optimized for India), check weather, or help with translations. How can I assist you today?" },
           alternatives: [],
           confidence: 1.0
         },
@@ -218,16 +255,37 @@ function generateMockPlan(goal: string, availableTools: string): PlanOutputData 
   }
 
   // ── Weather ────────────────────────────────────────────────────────────────
-  if (goalLower.includes('weather')) {
+  if (goalLower.includes('weather') || goalLower.includes('temp') || goalLower.includes('rain')) {
     return {
       goal,
-      steps: [{
-        id: 'step_1',
-        objective: 'Get weather forecast',
-        tool: 'getWeather',
-        inputs: { location: 'Delhi', days: 5 },
-        dependsOn: [],
-      }],
+      steps: [
+        {
+          id: 'step_1',
+          objective: 'Identify location for weather',
+          tool: 'parseIntent',
+          inputs: { query: goal },
+          dependsOn: [],
+        },
+        {
+          id: 'step_2',
+          objective: 'Get weather forecast',
+          tool: 'getWeather',
+          inputs: { location: '$step_1.result.entities.location', days: 5 },
+          dependsOn: ['step_1'],
+        },
+        {
+          id: 'step_3',
+          objective: 'Format weather information',
+          tool: 'synthesizeFinalResponse',
+          inputs: { 
+            goal, 
+            bestResult: '$step_2.result',
+            alternatives: [],
+            confidence: 0.9
+          },
+          dependsOn: ['step_2'],
+        }
+      ],
     };
   }
 
@@ -274,24 +332,26 @@ Your job is to:
 
 # STEP 1: PARSE USER INTENT (MANDATORY FIRST STEP)
 Include 'parseIntent' as the FIRST step. Inputs: { "query": "<full user query>" }
-Extract: intent, origin IATA code, destination IATA code, date range, preference (cheapest/fastest/best), region, currency.
+Extract: intent (translation, weather_search, flight_search, or small_talk), and relevant entities.
 
 ---
 
-# STEP 2: REGION-AWARE RULES (MANDATORY)
-Based on detected region:
-- India (DEL, BOM, etc.): currency MUST be INR, airlines MUST be realistic (IndiGo, Air India, Vistara, SpiceJet). NEVER use Delta, United, or USD.
-- Violating region rules = INVALID plan.
+# STEP 2: DYNAMIC BRANCHING
+Based on 'parseIntent' result:
+- If 'translation': Use 'translateText' then 'synthesizeFinalResponse'.
+- If 'weather_search': Use 'getWeather' then 'synthesizeFinalResponse'.
+- If 'flight_search': Follow the mandatory Flight Optimization Pipeline (Search -> Aggregate -> Select -> Synthesize).
+- If 'small_talk': Go straight to 'synthesizeFinalResponse'.
 
 ---
 
-# STEP 3: MULTI-STEP PLANNING (NO SHORTCUTS)
-If query involves cheap / best / optimal:
-1. Expand date range (next week = 7 separate days)
-2. Call searchFlights once per date (each as its own step)
-3. Merge all results with aggregateFlights
-4. Select best using selectBestFlight
-5. Synthesize final answer with synthesizeFinalResponse
+# STEP 3: FLIGHT OPTIMIZATION PIPELINE (MANDATORY FOR FLIGHTS)
+1. searchFlights x N: Call once per date if range specified (e.g. next week = 7 separate days).
+2. aggregateFlights: Depends on ALL searchFlights steps.
+3. selectBestFlight: Depends on aggregateFlights.
+4. synthesizeFinalResponse: Depends on selectBestFlight.
+
+ALWAYS use INR currency and Indian airlines (IndiGo, Air India, Vistara) for Indian routes.
 
 ---
 
@@ -301,13 +361,6 @@ NEVER:
 - Call synthesizeFinalResponse directly after searchFlights
 - Use array indexing like flights[0]
 - Pass incomplete inputs to tools
-
-MANDATORY TOOL FLOW ORDER:
-1. parseIntent
-2. searchFlights x N (one per date, can share same dependsOn)
-3. aggregateFlights (dependsOn ALL searchFlights steps)
-4. selectBestFlight (dependsOn aggregateFlights)
-5. synthesizeFinalResponse (dependsOn selectBestFlight)
 
 ---
 

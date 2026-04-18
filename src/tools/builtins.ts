@@ -67,7 +67,7 @@ const aggregateFlightsParams = z.object({
 const synthesizeParams = z.object({
   goal: z.string().describe("The user's original goal"),
   bestResult: z.any().describe("The best result computed from a selection step"),
-  alternatives: z.array(z.any()).describe("A list of alternative options from the selection step"),
+  alternatives: z.array(z.any()).nullish().default([]).describe("A list of alternative options from the selection step"),
   confidence: z.union([z.number(), z.string()]).optional().describe("Confidence score of the decision"),
 });
 
@@ -84,20 +84,72 @@ export const builtInTools: Tool[] = [
       }
       const q = p.query.toLowerCase();
 
-      // Detect region and currency
+      // ── Intent Branch Recognition (with Typo Tolerance) ───────────────────
+      const isWeather = q.includes('weather') || q.includes('wether') || q.includes('temp') || q.includes('rain');
+      const isTranslate = q.includes('translat') || q.includes('japans') || q.includes('hind') || q.includes('localiz') || q.includes('meaning');
+      const greetings = ['hi', 'hello', 'hey', 'greetings', 'sup', 'yo'];
+      const isSmallTalk = greetings.some(g => q.includes(g)) && !q.includes('flight') && !q.includes('book');
+
+      // ── Weather Branch ─────────────────────────────────────────────────────
+      if (isWeather) {
+        const cities = ['delhi', 'mumbai', 'london', 'new york', 'tokyo'];
+        const location = cities.find(c => q.includes(c)) || 'Delhi';
+        return {
+          success: true,
+          data: {
+            intent: 'weather_search',
+            entities: { location, days: 5 },
+            context: { region: 'IN', currency: 'INR' }
+          }
+        };
+      }
+
+      // ── Translation Branch ─────────────────────────────────────────────────
+      if (isTranslate) {
+        let targetLang = 'Japanese';
+        if (q.includes('hindi')) targetLang = 'Hindi';
+        if (q.includes('french')) targetLang = 'French';
+        if (q.includes('spanish')) targetLang = 'Spanish';
+        
+        // Extract text in quotes or after "translate"
+        const quoteMatch = p.query.match(/"([^"]+)"/);
+        const textToTranslate = quoteMatch ? quoteMatch[1] : p.query.replace(/translate|transalte/i, '').trim();
+
+        return {
+          success: true,
+          data: {
+            intent: 'translation',
+            entities: { text: textToTranslate, targetLang },
+            context: { region: 'IN', currency: 'INR' }
+          }
+        };
+      }
+
+      // ── Small Talk Branch ──────────────────────────────────────────────────
+      if (isSmallTalk) {
+        return {
+          success: true,
+          data: {
+            intent: 'small_talk',
+            message: "User is greeting or making small talk.",
+            context: { region: 'IN', currency: 'INR' }
+          }
+        };
+      }
+
+      // ── Flight Search Branch (Default) ─────────────────────────────────────
       const indianCities: Record<string, string> = {
         delhi: 'DEL', 'new delhi': 'DEL', mumbai: 'BOM', bangalore: 'BLR',
         bengaluru: 'BLR', hyderabad: 'HYD', chennai: 'MAA', kolkata: 'CCU',
         pune: 'PNQ', goa: 'GOI', ahmedabad: 'AMD', jaipur: 'JAI',
       };
+      
       let origin = 'DEL', destination = 'BOM', region = 'IN', currency = 'INR';
-
       for (const [city, code] of Object.entries(indianCities)) {
         if (q.includes(`from ${city}`)) origin = code;
         if (q.includes(`to ${city}`)) destination = code;
       }
 
-      // Detect date range
       const now = new Date();
       const isNextWeek = q.includes('next week');
       const start = new Date(now); start.setDate(now.getDate() + 1);
@@ -106,13 +158,10 @@ export const builtInTools: Tool[] = [
       const preference = q.includes('cheap') || q.includes('cheapest') ? 'cheapest'
         : q.includes('fast') ? 'fastest' : 'best';
 
-      const greetings = ['hi', 'hello', 'hey', 'greetings', 'sup', 'yo'];
-      const isSmallTalk = greetings.some(g => q.includes(g)) && !q.includes('flight') && !q.includes('book');
-
       return {
         success: true,
         data: {
-          intent: isSmallTalk ? 'small_talk' : 'flight_search',
+          intent: 'flight_search',
           entities: {
             origin,
             destination,
@@ -272,13 +321,14 @@ export const builtInTools: Tool[] = [
     execute: async (params) => {
       const p = params as { query: string; limit?: number };
       await new Promise(r => setTimeout(r, 600));
+      const q = p.query || 'search results';
       return {
         success: true,
         data: {
           results: [
-            { title: `${p.query} - Result 1`, url: 'https://example.com/1', snippet: `Relevant information about ${p.query}...` },
-            { title: `${p.query} - Result 2`, url: 'https://example.com/2', snippet: `Additional details on ${p.query}...` },
-            { title: `${p.query} - Result 3`, url: 'https://example.com/3', snippet: `More about ${p.query}...` },
+            { title: `${q} - Result 1`, url: 'https://example.com/1', snippet: `Relevant information about ${q}...` },
+            { title: `${q} - Result 2`, url: 'https://example.com/2', snippet: `Additional details on ${q}...` },
+            { title: `${q} - Result 3`, url: 'https://example.com/3', snippet: `More about ${q}...` },
           ].slice(0, p.limit || 3),
           totalResults: 42,
           query: p.query,
@@ -354,18 +404,52 @@ export const builtInTools: Tool[] = [
     execute: async (params) => {
       const p = params as { text: string; targetLang: string };
       await new Promise(r => setTimeout(r, 400));
-      const translations: Record<string, string> = {
-        'es': 'Translated (Spanish)',
-        'fr': 'Translated (French)',
-        'de': 'Translated (German)',
-        'ja': 'Translated (Japanese)',
-        'zh': 'Translated (Chinese)',
+      
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (apiKey) {
+        try {
+          const genAI = new GoogleGenerativeAI(apiKey);
+          const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+          const result = await model.generateContent(
+            `Translate the following text from English to ${p.targetLang}. Return ONLY the translated text, nothing else. Text: "${p.text}"`
+          );
+          const translated = result.response.text().trim();
+          return {
+            success: true,
+            data: {
+              original: p.text,
+              translated: translated,
+              targetLang: p.targetLang,
+              detectedLang: 'en',
+            },
+          };
+        } catch (err) {
+          console.warn('[translateText] LLM unavailable:', err);
+        }
+      }
+      
+      const mockTranslations: Record<string, Record<string, string>> = {
+        'ja': { 'hello': 'こんにちは', 'hi': 'やあ', 'thank you': 'ありがとう', 'goodbye': 'さようなら', 'yes': 'はい', 'no': 'いいえ' },
+        'es': { 'hello': 'Hola', 'hi': 'Hola', 'thank you': 'Gracias', 'goodbye': 'Adiós', 'yes': 'Sí', 'no': 'No' },
+        'fr': { 'hello': 'Bonjour', 'hi': 'Salut', 'thank you': 'Merci', 'goodbye': 'Au revoir', 'yes': 'Oui', 'no': 'Non' },
+        'de': { 'hello': 'Hallo', 'hi': 'Hi', 'thank you': 'Danke', 'goodbye': 'Auf Wiedersehen', 'yes': 'Ja', 'no': 'Nein' },
+        'zh': { 'hello': '你好', 'hi': '你好', 'thank you': '谢谢', 'goodbye': '再见', 'yes': '是', 'no': '不' },
+        'ko': { 'hello': '안녕하세요', 'hi': '안녕', 'thank you': '감사합니다', 'goodbye': '안녕히 가세요', 'yes': '네', 'no': '아니요' },
+        'hi': { 'hello': 'नमस्ते', 'hi': 'नमस्ते', 'thank you': 'धन्यवाद', 'goodbye': 'अलविदा', 'yes': 'हाँ', 'no': 'नहीं' },
       };
+      
+      const langLower = p.targetLang.toLowerCase();
+      const langMap: Record<string, string> = { 'japanese': 'ja', 'spanish': 'es', 'french': 'fr', 'german': 'de', 'chinese': 'zh', 'korean': 'ko', 'hindi': 'hi' };
+      const langCode = langMap[langLower] || langLower;
+      const langTranslations = mockTranslations[langCode] || {};
+      const key = p.text.toLowerCase();
+      const translated = langTranslations[key] || `[${p.targetLang}] ${p.text}`;
+      
       return {
         success: true,
         data: {
           original: p.text,
-          translated: `${p.text} [${translations[p.targetLang] || p.targetLang}]`,
+          translated: translated,
           targetLang: p.targetLang,
           detectedLang: 'en',
         },
@@ -414,6 +498,11 @@ export const builtInTools: Tool[] = [
         
         // Handle generic message results (like greetings)
         if (b.message) return b.message;
+
+        // Handle translation results
+        if (b.translated) {
+          return `🌏 Translation to **${b.targetLang}**:\n\n*Original*: "${b.original}"\n*Translated*: **${b.translated}**\n\nConfidence: ${Math.round((p.confidence === 'high' ? 0.95 : (typeof p.confidence === 'number' ? p.confidence : 0.85)) * 100)}%`;
+        }
 
         const currency = b.currency === 'INR' ? '₹' : (b.currency === 'USD' ? '$' : '');
         const price = b.price != null ? `${currency}${b.price.toLocaleString()}` : 'unknown price';

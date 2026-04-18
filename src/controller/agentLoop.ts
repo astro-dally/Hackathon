@@ -9,6 +9,7 @@ import { createLLMVerifier } from '../verifier/llm.js';
 import { createSchemaVerifier } from '../verifier/schema.js';
 import { createPlanRefiner } from '../planner/refiner.js';
 import { createRepairEngine, RepairEngine } from '../verifier/repair.js';
+import { createReasoningEngine, ReasoningEngine, Decision } from './reasoningEngine.js';
 import { 
   createDecisionEngine, 
   DecisionEngine,
@@ -20,6 +21,9 @@ import {
 } from './decisionEngine.js';
 
 export type AgentEvent =
+  | { type: 'think:start'; thought: string }
+  | { type: 'think:reason'; reasoning: string }
+  | { type: 'think:decide'; tool: string; reason: string }
   | { type: 'plan:created'; plan: any }
   | { type: 'step:start'; step: any }
   | { type: 'step:complete'; execution: StepExecution }
@@ -37,6 +41,7 @@ export class AgentLoop {
   private logger: Logger;
   private refiner: ReturnType<typeof createPlanRefiner>;
   private repairEngine: RepairEngine;
+  private reasoningEngine: ReasoningEngine;
   private decisionEngine: DecisionEngine;
   private completedSteps: StepExecution[] = [];
   private iteration: number = 0;
@@ -60,6 +65,7 @@ export class AgentLoop {
       enablePartialRefinement: config.enablePartialRefinement ?? true,
       enableRepair: config.enableRepair ?? true,
       enableReflection: config.enableReflection ?? true,
+      enableReAct: config.enableReAct ?? false,
       maxRepairsPerStep: config.maxRepairsPerStep ?? 3,
       maxRetriesPerStep: config.maxRetriesPerStep ?? 2,
     };
@@ -82,6 +88,7 @@ export class AgentLoop {
       maxRetries: this.config.maxRetriesPerStep,
       maxRepairs: this.config.maxRepairsPerStep
     });
+    this.reasoningEngine = createReasoningEngine(registry);
   }
 
   /** Emit a structured SSE event to the consumer */
@@ -102,6 +109,10 @@ export class AgentLoop {
   }> {
     this.logger.info(`Starting agent loop for goal: ${this.state.getGoal()}`);
     this.state.setStatus('running');
+
+    if (this.config.enableReAct) {
+      return this.runReAct();
+    }
 
     let currentPlan = await this.createInitialPlan();
     this.state.setPlan(currentPlan);
@@ -529,12 +540,33 @@ export class AgentLoop {
   private resolveValue(value: unknown): unknown {
     if (typeof value === 'string' && value.startsWith('$')) {
       // Format: $step_X.result.field.subfield...
+      // Path examples:
+      //   $step_1.result.entities.text       -> parseIntent output
+      //   $step_1.result.data.entities.text  -> equivalent but longer
+      //   $step_2.result.translated         -> translateText output
       const parts = value.slice(1).split('.');
-      const stepId = parts[0];           // e.g. "step_5"
-      const rest = parts.slice(1);       // e.g. ["result", "flights"]
+      const stepId = parts[0];           // e.g. "step_1"
+      let rest = parts.slice(1);        // e.g. ["result", "entities", "text"]
       const completed = this.completedSteps.find(s => s.step.id === stepId);
       if (!completed) return value;       // unresolved — return original string
-      let current: unknown = completed;
+      
+      // StepExecution.result already contains the tool's data payload
+      // (the 'data' field from the ToolResult), not wrapped in {success, data}
+      let current: unknown = completed.result;
+      
+      if (current === null || current === undefined) {
+        return value; // No result to resolve from
+      }
+      
+      // The stored result IS the data, but the path might have "result" or "data" prefix
+      // Skip these prefixes since we're already at data level
+      // $step_1.result.data.entities.text -> ["result", "data", "entities", "text"]
+      // $step_1.result.entities.text       -> ["result", "entities", "text"]
+      while (rest.length > 0 && (rest[0] === 'result' || rest[0] === 'data')) {
+        rest = rest.slice(1);
+      }
+      
+      // Now traverse the remaining path
       for (const part of rest) {
         if (current === null || current === undefined) break;
         current = (current as Record<string, unknown>)[part];
@@ -666,6 +698,67 @@ export class AgentLoop {
     return this.registry.list()
       .map(t => `- ${t.name}: ${t.description}`)
       .join('\n');
+  }
+
+  private async runReAct(): Promise<{
+    success: boolean;
+    steps: StepExecution[];
+    iterations: number;
+    errors: string[];
+  }> {
+    const goal = this.state.getGoal();
+    const context = new Map<string, unknown>();
+
+    this.logger.info(`ReAct mode: Thinking about goal...`);
+    this.emit({ type: 'think:start', thought: `Analyzing: "${goal}"` });
+
+    const { thought, decisions } = await this.reasoningEngine.think(goal, context);
+
+    this.emit({ type: 'think:reason', reasoning: thought });
+
+    for (const decision of decisions) {
+      this.logger.info(`ReAct: Decided to use ${decision.tool}`);
+      this.emit({ type: 'think:decide', tool: decision.tool, reason: decision.reason });
+    }
+
+    const step: Step = {
+      id: 'react_1',
+      objective: decisions[0]?.reason || `Execute ${decisions[0]?.tool}`,
+      tool: decisions[0]?.tool || 'searchWeb',
+      inputs: decisions[0]?.inputs || { query: goal },
+    };
+
+    this.emit({ type: 'step:start', step });
+
+    this.logger.info(`ReAct: Executing ${step.tool}...`);
+    const result = await this.executor.executeStep(step, new Map());
+
+    const execution: StepExecution = {
+      step,
+      status: result.success ? 'completed' : 'failed',
+      result: result.data,
+      error: result.error,
+      attempts: result.attempts,
+      durationMs: result.durationMs,
+    };
+
+    if (result.success) {
+      this.emit({ type: 'step:complete', execution });
+    } else {
+      this.emit({ type: 'step:failed', execution });
+    }
+
+    this.completedSteps.push(execution);
+
+    const finalResult = {
+      success: result.success,
+      steps: this.completedSteps,
+      iterations: 1,
+      errors: result.error ? [result.error] : [],
+    };
+
+    this.emit({ type: 'run:complete', ...finalResult });
+    return finalResult;
   }
 }
 

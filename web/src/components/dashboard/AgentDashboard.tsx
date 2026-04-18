@@ -90,6 +90,37 @@ export function AgentDashboard() {
 
   function handleSSEEvent(event: any, runId: string, startTime: number, goal: string) {
     switch (event.type) {
+      // ReAct thinking events
+      case 'think:start':
+        setRunState(prev => prev ? {
+          ...prev,
+          logs: [...(prev.logs ?? []), {
+            id: `log-think-start-${Date.now()}`, timestamp: new Date().toISOString(),
+            type: 'decision', message: `Thinking: ${event.thought}`
+          }]
+        } : null);
+        break;
+
+      case 'think:reason':
+        setRunState(prev => prev ? {
+          ...prev,
+          logs: [...(prev.logs ?? []), {
+            id: `log-think-reason-${Date.now()}`, timestamp: new Date().toISOString(),
+            type: 'info', message: event.reasoning
+          }]
+        } : null);
+        break;
+
+      case 'think:decide':
+        setRunState(prev => prev ? {
+          ...prev,
+          logs: [...(prev.logs ?? []), {
+            id: `log-think-decide-${Date.now()}`, timestamp: new Date().toISOString(),
+            type: 'decision', message: `Decided: ${event.tool} — ${event.reason}`
+          }]
+        } : null);
+        break;
+
       case 'plan:created':
         setRunState(prev => prev ? {
           ...prev,
