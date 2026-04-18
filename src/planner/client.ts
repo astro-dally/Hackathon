@@ -38,6 +38,26 @@ export async function generatePlan(
   availableTools: string,
   model: string = 'gemini-2.5-flash'
 ): Promise<PlanOutputData> {
+  const goalLower = goal.toLowerCase().trim();
+  const greetings = ['hi', 'hello', 'hey', 'greetings', 'sup', 'yo'];
+  if (greetings.includes(goalLower)) {
+    return {
+      goal,
+      steps: [{
+        id: 'step_1',
+        objective: 'Greet the user',
+        tool: 'synthesizeFinalResponse',
+        inputs: {
+          goal,
+          bestResult: { message: "Hello! I am your AI Mission Control. I can help you find and book flights (optimized for India), check weather, or search the web. How can I assist you today?" },
+          alternatives: [],
+          confidence: 1.0
+        },
+        dependsOn: [],
+      }],
+    };
+  }
+
   const useMock = process.env.USE_MOCK === 'true';
   
   if (useMock) {
@@ -161,6 +181,26 @@ function generateMockPlan(goal: string, availableTools: string): PlanOutputData 
     }
 
     return { goal, steps };
+  }
+
+  // ── Small Talk / Greetings ────────────────────────────────────────────────
+  const greetings = ['hi', 'hello', 'hey', 'greetings', 'sup', 'yo'];
+  if (greetings.includes(goalLower.trim())) {
+    return {
+      goal,
+      steps: [{
+        id: 'step_1',
+        objective: 'Acknowledge the user greeting',
+        tool: 'synthesizeFinalResponse',
+        inputs: {
+          goal,
+          bestResult: { message: "Hello! I am your AI Mission Control. I can help you find and book flights (specifically optimized for India), check weather, or search the web. How can I assist you today?" },
+          alternatives: [],
+          confidence: 1.0
+        },
+        dependsOn: [],
+      }],
+    };
   }
 
   // ── Generic web search ─────────────────────────────────────────────────────

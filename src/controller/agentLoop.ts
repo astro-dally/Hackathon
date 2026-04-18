@@ -407,9 +407,25 @@ export class AgentLoop {
     }
 
     try {
-      const parsed = tool.parameters.safeParse(step.inputs);
+      // ── Skip Zod validation for variable references ($step_X...) ───────────
+      const filteredInputs = { ...step.inputs };
+      for (const [key, value] of Object.entries(filteredInputs)) {
+        if (typeof value === 'string' && value.startsWith('$')) {
+          delete (filteredInputs as any)[key];
+        }
+      }
+
+      const parsed = tool.parameters.safeParse(filteredInputs);
       if (!parsed.success) {
-        return { valid: false, reason: `Invalid inputs: ${parsed.error.errors.map(e => e.message).join(', ')}` };
+        // Only report errors for fields that WEREN'T skipped references
+        const realErrors = parsed.error.errors.filter(e => {
+          const path = e.path[0];
+          return ! (typeof step.inputs[path as string] === 'string' && (step.inputs[path as string] as string).startsWith('$'));
+        });
+        
+        if (realErrors.length > 0) {
+          return { valid: false, reason: `Invalid inputs: ${realErrors.map(e => e.message).join(', ')}` };
+        }
       }
     } catch (error) {
       return { valid: false, reason: `Schema validation error: ${error}` };

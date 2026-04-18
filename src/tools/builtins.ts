@@ -106,10 +106,13 @@ export const builtInTools: Tool[] = [
       const preference = q.includes('cheap') || q.includes('cheapest') ? 'cheapest'
         : q.includes('fast') ? 'fastest' : 'best';
 
+      const greetings = ['hi', 'hello', 'hey', 'greetings', 'sup', 'yo'];
+      const isSmallTalk = greetings.some(g => q.includes(g)) && !q.includes('flight') && !q.includes('book');
+
       return {
         success: true,
         data: {
-          intent: 'flight_search',
+          intent: isSmallTalk ? 'small_talk' : 'flight_search',
           entities: {
             origin,
             destination,
@@ -408,6 +411,10 @@ export const builtInTools: Tool[] = [
       function localFormat(): string {
         const b = p.bestResult;
         if (!b) return 'I was unable to find a suitable result for your query.';
+        
+        // Handle generic message results (like greetings)
+        if (b.message) return b.message;
+
         const currency = b.currency === 'INR' ? '₹' : (b.currency === 'USD' ? '$' : '');
         const price = b.price != null ? `${currency}${b.price.toLocaleString()}` : 'unknown price';
         const alts = (p.alternatives || []).slice(0, 2).map((a: any) => {

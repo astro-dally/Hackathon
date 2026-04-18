@@ -11,7 +11,13 @@ interface ControlPanelProps {
   onDeleteRun?: (id: string) => void;
 }
 
-export function ControlPanel({ onExecute, isExecuting, pastRuns = [], onViewRun, onDeleteRun }: ControlPanelProps) {
+export function ControlPanel({ 
+  onExecute, 
+  isExecuting, 
+  pastRuns = [], 
+  onViewRun, 
+  onDeleteRun 
+}: ControlPanelProps) {
   const [goal, setGoal] = useState('');
 
   return (
@@ -41,9 +47,6 @@ export function ControlPanel({ onExecute, isExecuting, pastRuns = [], onViewRun,
               className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-2 px-4 rounded transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Play className="w-3 h-3 fill-current" /> {isExecuting ? 'Executing...' : 'Execute'}
-            </button>
-            <button className="bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-bold py-2 px-3 rounded transition-colors border border-gray-600">
-              <Pause className="w-3 h-3 fill-current" />
             </button>
           </div>
         </div>
