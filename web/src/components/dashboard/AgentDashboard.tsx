@@ -95,6 +95,12 @@ export function AgentDashboard() {
       case 'think:start':
         setRunState(prev => prev ? {
           ...prev,
+          steps: [...prev.steps, {
+            step: { id: 'think_1', objective: event.thought, tool: '🤔', inputs: {} },
+            status: 'running',
+            attempts: 1,
+            durationMs: 0,
+          }],
           logs: [...(prev.logs ?? []), {
             id: `log-think-start-${Date.now()}`, timestamp: new Date().toISOString(),
             type: 'decision', message: `Thinking: ${event.thought}`
@@ -105,6 +111,12 @@ export function AgentDashboard() {
       case 'think:reason':
         setRunState(prev => prev ? {
           ...prev,
+          steps: [...prev.steps, {
+            step: { id: 'think_2', objective: event.reasoning, tool: '💭', inputs: {} },
+            status: 'completed',
+            attempts: 1,
+            durationMs: 50,
+          }],
           logs: [...(prev.logs ?? []), {
             id: `log-think-reason-${Date.now()}`, timestamp: new Date().toISOString(),
             type: 'info', message: event.reasoning
@@ -115,6 +127,12 @@ export function AgentDashboard() {
       case 'think:decide':
         setRunState(prev => prev ? {
           ...prev,
+          steps: [...prev.steps, {
+            step: { id: 'think_3', objective: event.reason, tool: event.tool, inputs: {} },
+            status: 'completed',
+            attempts: 1,
+            durationMs: 100,
+          }],
           logs: [...(prev.logs ?? []), {
             id: `log-think-decide-${Date.now()}`, timestamp: new Date().toISOString(),
             type: 'decision', message: `Decided: ${event.tool} — ${event.reason}`
@@ -185,10 +203,19 @@ export function AgentDashboard() {
         const state = event.state as AgentRunState;
         setRunState(state);
         addRun(state);
+        
+        // Set final answer if present
+        if (state.finalAnswer) {
+          setFinalAnswer({ text: state.finalAnswer, source: 'local', confidence: 0.9 });
+        }
         break;
       }
 
       case 'run:complete':
+        // Also handle final answer from run:complete event
+        if ((event as any).finalAnswer) {
+          setFinalAnswer({ text: (event as any).finalAnswer, source: 'local', confidence: 0.9 });
+        }
         setRunState(prev => prev ? { ...prev, status: event.success ? 'Completed' : 'Failed', iteration: event.iterations } : null);
         break;
     }

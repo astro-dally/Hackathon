@@ -55,7 +55,7 @@ export function ControlPanel({
             />
             <div className="absolute bottom-3 right-3">
                <button 
-                  onClick={() => { if (goal.trim() && onExecute) { onExecute(goal.trim()); setGoal(''); } }}
+                  onClick={() => { if (goal.trim() && onExecute) { onExecute(goal.trim()); } }}
                   disabled={isExecuting || !goal.trim()}
                   className="bg-indigo-600 hover:bg-indigo-500 text-white p-2 rounded-lg transition-all shadow-[0_4px_12px_rgba(79,70,229,0.3)] disabled:opacity-0 disabled:scale-90 scale-100 active:scale-95 group-hover:shadow-[0_4px_15px_rgba(79,70,229,0.5)]"
                 >

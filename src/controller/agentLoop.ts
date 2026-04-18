@@ -30,7 +30,7 @@ export type AgentEvent =
   | { type: 'step:failed'; execution: StepExecution }
   | { type: 'step:repaired'; execution: StepExecution }
   | { type: 'hitl:pending'; stepId: string; data: any; question: string }
-  | { type: 'run:complete'; success: boolean; steps: StepExecution[]; iterations: number; errors: string[] };
+  | { type: 'run:complete'; success: boolean; steps: StepExecution[]; iterations: number; errors: string[]; finalAnswer?: string };
 
 export class AgentLoop {
   private state: StateStore;
@@ -707,6 +707,69 @@ export class AgentLoop {
     errors: string[];
   }> {
     const goal = this.state.getGoal();
+    const goalClean = goal.toLowerCase().trim();
+    
+    // Check for simple greetings - respond directly
+    const greetings = ['hi', 'hello', 'hey', 'sup', 'yo', 'hiya', 'heya', 'greetings'];
+    if (greetings.includes(goalClean)) {
+      const greetingResponses = [
+        "Hello! I'm your AI Agent. I can help you with flights, hotels, weather, translations, calculations, and more. How can I assist you today?",
+        "Hi there! I'm here to help. Try asking about flights, weather, or translations!",
+        "Hey! What can I help you with today?",
+      ];
+      const response = greetingResponses[Math.floor(Math.random() * greetingResponses.length)];
+      
+      const step: Step = {
+        id: 'greet_1',
+        objective: 'Greet the user',
+        tool: 'greeting',
+        inputs: {},
+      };
+      
+      const execution: StepExecution = {
+        step,
+        status: 'completed',
+        result: { message: response },
+        attempts: 1,
+        durationMs: 10,
+      };
+      
+      this.completedSteps.push(execution);
+      this.emit({ type: 'step:complete', execution });
+      this.emit({ type: 'run:complete', success: true, steps: this.completedSteps, iterations: 1, errors: [] });
+      
+      // Format human-readable final answer from step result
+      const stepResult = this.completedSteps[0]?.result as any;
+      let finalText = '';
+      
+      if (stepResult?.translated) {
+        finalText = `🌏 Translation to **${stepResult.targetLang}**:\n\n"${stepResult.original}" → **${stepResult.translated}**`;
+      } else if (stepResult?.location) {
+        const current = stepResult.current;
+        finalText = `🌤️ Weather in **${stepResult.location}**\n\nCurrently: ${current?.temp}°F, ${current?.condition}\n\n${stepResult.forecast?.length ? `Forecast: ${stepResult.forecast[0]?.day} - ${stepResult.forecast[0]?.high}°F/${stepResult.forecast[0]?.low}°F` : ''}`;
+      } else if (stepResult?.result != null) {
+        finalText = `🧮 Calculation Result: **${stepResult.result}**`;
+      } else if (stepResult?.flights?.length) {
+        const cheapest = stepResult.flights[0];
+        const currency = cheapest?.currency === 'INR' ? '₹' : '$';
+        finalText = `✈️ Cheapest flight: **${cheapest?.airline}** - ${currency}${cheapest?.price}\n\n${stepResult.flights.length} flights found`;
+      } else if (stepResult?.reminderId) {
+        finalText = `⏰ Reminder set: **${stepResult.title}**\n\nTime: ${stepResult.time}`;
+      } else if (stepResult?.message) {
+        finalText = stepResult.message;
+      }
+      
+      if (finalText) {
+        this.emit({ type: 'run:complete', success: true, steps: this.completedSteps, iterations: 1, errors: [], finalAnswer: finalText });
+        return {
+          success: true,
+          steps: this.completedSteps,
+          iterations: 1,
+          errors: [],
+        };
+      }
+    }
+
     const context = new Map<string, unknown>();
 
     this.logger.info(`ReAct mode: Thinking about goal...`);

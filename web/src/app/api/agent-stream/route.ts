@@ -65,13 +65,16 @@ export async function GET(request: NextRequest) {
             message: `[${step.step.tool}] ${step.status}`,
             stepId: step.step.id,
             details: step.result ? JSON.stringify(step.result).slice(0, 100) : step.error,
-          });
+          } as any);
         }
         
         if (result.errors.length > 0) {
           logs.push({ id: 'log-err', timestamp: new Date().toISOString(), type: 'error', message: 'Run encountered errors', details: result.errors.join(', ') } as any);
         }
 
+        // Get final answer if available
+        const finalAnswer = (result as any).finalAnswer;
+        
         send({
           type: 'run:state',
           state: {
@@ -85,6 +88,7 @@ export async function GET(request: NextRequest) {
             globalConfidence,
             steps: result.steps,
             logs,
+            finalAnswer,
           }
         });
 

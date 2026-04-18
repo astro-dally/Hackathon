@@ -68,4 +68,5 @@ export interface AgentRunState {
   endTime?: number;
   steps: StepExecution[];
   logs: ReasoningLogItem[];
+  finalAnswer?: string;
 }

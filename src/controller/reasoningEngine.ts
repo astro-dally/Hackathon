@@ -23,12 +23,7 @@ export class ReasoningEngine {
     logger.info(`Reasoning about: ${goal}`);
 
     const availableTools = this.registry.list();
-    const toolDescriptions = availableTools.map(t => `- ${t.name}: ${t.description}`).join('\n');
-
-    const goalLower = goal.toLowerCase();
-
-    const intentAnalysis = this.analyzeIntent(goalLower);
-
+    const intentAnalysis = this.analyzeIntent(goal);
     const decisions = this.decideNextSteps(intentAnalysis, context, availableTools);
 
     return {
@@ -71,6 +66,10 @@ export class ReasoningEngine {
         pattern: /remind|alert|schedule/i,
         thought: "User wants to set a reminder"
       },
+      greeting: {
+        pattern: /^(hi|hello|hey|sup|yo|hiya|heya|greetings)$/i,
+        thought: "User is greeting me"
+      },
     };
 
     for (const [intent, config] of Object.entries(intents)) {
@@ -92,28 +91,26 @@ export class ReasoningEngine {
 
   private extractEntities(goal: string, intent: string): Record<string, unknown> {
     const entities: Record<string, unknown> = {};
-
     const languages: Record<string, string> = {
       'japanese': 'ja', 'spanish': 'es', 'french': 'fr', 'german': 'de',
       'chinese': 'zh', 'korean': 'ko', 'hindi': 'hi', 'english': 'en'
     };
 
     if (intent === 'translation') {
-      // Match: translate "hello" from english to japanese
-      // Extract text in quotes
       const quotedMatch = goal.match(/"([^"]+)"/);
       if (quotedMatch) {
         entities.text = quotedMatch[1].trim();
+      } else {
+        const wordMatch = goal.replace(/translat\w*/i, '').trim().split(/\s+to\s+/i)[0];
+        if (wordMatch) entities.text = wordMatch.trim();
       }
       
-      // Find target language (after "to")
       const targetMatch = goal.match(/to\s+(\w+)/i);
       if (targetMatch) {
         const lang = targetMatch[1].toLowerCase();
         entities.targetLang = languages[lang] || lang;
       }
       
-      // Fallback: extract any language mentioned
       if (!entities.targetLang) {
         for (const [lang, code] of Object.entries(languages)) {
           if (goal.toLowerCase().includes(lang)) {
@@ -123,10 +120,7 @@ export class ReasoningEngine {
         }
       }
       
-      // Default to Japanese if not specified
-      if (!entities.targetLang) {
-        entities.targetLang = 'ja';
-      }
+      if (!entities.targetLang) entities.targetLang = 'ja';
     }
 
     const airports: Record<string, string> = {
@@ -136,19 +130,28 @@ export class ReasoningEngine {
     };
 
     if (intent === 'flight') {
-      for (const [city, code] of Object.entries(airports)) {
-        if (goal.includes(city)) {
-          if (!entities.origin) {
-            entities.origin = code;
-          } else {
-            entities.destination = code;
+      const fromToMatch = goal.match(/from\s+(\w+)\s+to\s+(\w+)/i);
+      if (fromToMatch) {
+        const fromCity = fromToMatch[1].toLowerCase();
+        const toCity = fromToMatch[2].toLowerCase();
+        if (airports[fromCity]) entities.origin = airports[fromCity];
+        if (airports[toCity]) entities.destination = airports[toCity];
+      } else {
+        for (const [city, code] of Object.entries(airports)) {
+          if (goal.includes(city)) {
+            if (!entities.origin) {
+              entities.origin = code;
+            } else {
+              entities.destination = code;
+            }
           }
         }
       }
       
-      const dateMatch = goal.match(/(\d{4}-\d{2}-\d{2})|(\w+\s+\d{1,2})/);
-      if (dateMatch) {
-        entities.date = dateMatch[1] || dateMatch[2];
+      if (goal.includes('tomorrow')) {
+        const tmr = new Date();
+        tmr.setDate(tmr.getDate() + 1);
+        entities.date = tmr.toISOString().split('T')[0];
       }
     }
 
@@ -163,26 +166,15 @@ export class ReasoningEngine {
     }
 
     if (intent === 'calculator') {
-      // Normalize: "divided by" -> "/", "times" -> "*"
-      let expr = goal
-        .replace(/divided by/gi, '/')
-        .replace(/times/gi, '*')
-        .replace(/multiplied by/gi, '*');
-      // Match: 15 + 27, 100 * 5, 50 / 2
+      let expr = goal.replace(/divided by/gi, '/').replace(/times/gi, '*').replace(/multiplied by/gi, '*');
       const mathMatch = expr.match(/(\d+\s*[\+\-*\/]\s*\d+)/);
-      if (mathMatch) {
-        entities.expression = mathMatch[1].replace(/\s+/g, '');
-      }
+      if (mathMatch) entities.expression = mathMatch[1].replace(/\s+/g, '');
     }
 
     if (intent === 'reminder') {
-      // Extract reminder title: "reminder for meeting" -> "meeting"
       const titleMatch = goal.match(/reminder\s+(?:for\s+)?(.+?)(?:\s+at|\s+tomorrow|\s+today|$)/i);
-      if (titleMatch) {
-        entities.title = titleMatch[1].trim();
-      }
+      if (titleMatch) entities.title = titleMatch[1].trim();
       
-      // Extract time: "at 5pm", "tomorrow"
       const timeMatch = goal.match(/\bat\s+(\d+(?::\d+)?\s*(?:am|pm)?)/i);
       if (timeMatch) {
         entities.time = timeMatch[1].trim();
@@ -202,7 +194,16 @@ export class ReasoningEngine {
     availableTools: { name: string; description: string }[]
   ): Decision[] {
     const decisions: Decision[] = [];
-    const { intent, entities } = intentAnalysis;
+    const { intent, thought } = intentAnalysis;
+
+    if (intent === 'greeting') {
+      decisions.push({
+        tool: 'searchWeb',
+        inputs: { query: '' },
+        reason: thought,
+      });
+      return decisions;
+    }
 
     const toolMap: Record<string, string> = {
       'translation': 'translateText',
@@ -219,13 +220,13 @@ export class ReasoningEngine {
     if (tool && availableTools.find(t => t.name === tool)) {
       decisions.push({
         tool,
-        inputs: entities,
-        reason: `Based on my analysis: "${intentAnalysis.thought}". I'll use ${tool} to ${this.getToolAction(tool)}.`
+        inputs: intentAnalysis.entities,
+        reason: `Based on my analysis: "${thought}". I'll use ${tool} to ${this.getToolAction(tool)}.`
       });
     } else {
       decisions.push({
         tool: 'searchWeb',
-        inputs: { query: Object.values(entities)[0] || '' },
+        inputs: { query: Object.values(intentAnalysis.entities)[0] || '' },
         reason: "I'll search the web for relevant information."
       });
     }
